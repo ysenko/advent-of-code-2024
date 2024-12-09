@@ -1,9 +1,9 @@
-use std::{env, mem};
+use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::str::FromStr;
-use regex::Regex;
+use std::{env, mem};
 
 fn main() {
     // Get the file path from command-line arguments
@@ -17,7 +17,7 @@ fn main() {
     let memory = read_memory_data(file_path).expect("Failed to read and parse file");
 
     println!("Memory rows found: {:?}", memory.len());
-    
+
     println!("==================== Part 1 ====================");
     let mul_regex = Regex::new(r"mul\((?<first>\d+),(?<second>\d+)\)").unwrap();
 
@@ -26,14 +26,20 @@ fn main() {
     for s in memory.iter() {
         for mul_capture in mul_regex.captures_iter(s.as_str()) {
             let first: i32 = mul_capture.name("first").unwrap().as_str().parse().unwrap();
-            let second: i32 = mul_capture.name("second").unwrap().as_str().parse().unwrap();
+            let second: i32 = mul_capture
+                .name("second")
+                .unwrap()
+                .as_str()
+                .parse()
+                .unwrap();
             sum += first * second;
         }
     }
     println!("Sum: {}", sum);
 
     println!("==================== Part 2 ====================");
-    let mul_regex_with_dos = Regex::new(r"mul\((?<first>\d+),(?<second>\d+)\)|do\(\)|don't\(\)").unwrap();
+    let mul_regex_with_dos =
+        Regex::new(r"mul\((?<first>\d+),(?<second>\d+)\)|do\(\)|don't\(\)").unwrap();
 
     let mut do_mul = true;
     sum = 0;
@@ -42,7 +48,12 @@ fn main() {
             if let Some(mul_capture) = command_capture.name("first") {
                 if do_mul {
                     let first: i32 = mul_capture.as_str().parse().unwrap();
-                    let second: i32 = command_capture.name("second").unwrap().as_str().parse().unwrap();
+                    let second: i32 = command_capture
+                        .name("second")
+                        .unwrap()
+                        .as_str()
+                        .parse()
+                        .unwrap();
                     sum += first * second;
                 }
             } else if command_capture.get(0).unwrap().as_str() == "do()" {
@@ -54,7 +65,6 @@ fn main() {
     }
 
     println!("Sum: {}", sum);
-
 }
 
 fn read_memory_data(file_path: &str) -> io::Result<Vec<String>> {
