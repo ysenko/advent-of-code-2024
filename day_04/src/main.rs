@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -204,26 +203,6 @@ fn get_words_crossed_at_position(
     let half_len = len / 2;
     let max_row = words_data.len();
     let max_col = words_data[0].len();
-
-    // // Horizontal
-    // if col >= half_len && col + half_len < max_col {
-    //     if let Some(word) = get_word(len, &Direction::Right((row, col - half_len)), words_data) {
-    //         words.push(word);
-    //     }
-    //     if let Some(word) = get_word(len, &Direction::Left((row, col + half_len)), words_data) {
-    //         words.push(word);
-    //     }
-    // }
-
-    // // Vertical
-    // if row >= half_len && row + half_len < max_row {
-    //     if let Some(word) = get_word(len, &Direction::Up((row + half_len, col)), words_data) {
-    //         words.push(word);
-    //     }
-    //     if let Some(word) = get_word(len, &Direction::Down((row - half_len, col)), words_data) {
-    //         words.push(word);
-    //     }
-    // }
 
     // Diagonal
     if col >= half_len && col + half_len < max_col && row >= half_len && row + half_len < max_row {
