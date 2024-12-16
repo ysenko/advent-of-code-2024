@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -21,7 +21,7 @@ impl MapElement {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Copy, Eq, Hash)]
 enum Direction {
     Up,
     Down,
@@ -35,7 +35,7 @@ struct MapPosition {
     y: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Map {
     height: usize,
     width: usize,
@@ -52,13 +52,21 @@ impl Map {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Guard {
     position: MapPosition,
     direction: Direction,
+    start_position: MapPosition,
 }
 
 impl Guard {
+    pub fn new(position: MapPosition, direction: Direction, start_position: MapPosition) -> Guard {
+        Guard {
+            position,
+            direction,
+            start_position,
+        }
+    }
     fn turn_right(&mut self) {
         match self.direction {
             Direction::Up => self.direction = Direction::Right,
@@ -68,7 +76,17 @@ impl Guard {
         }
     }
 
-    pub fn make_move(&mut self, map: &Map) -> Option<MapPosition> {
+    fn make_move(&mut self, map: &Map) -> Option<MapPosition> {
+        if self.direction == Direction::Up && self.position.y == 0 {
+            return None;
+        } else if self.direction == Direction::Down && self.position.y == map.height - 1 {
+            return None;
+        } else if self.direction == Direction::Left && self.position.x == 0 {
+            return None;
+        } else if self.direction == Direction::Right && self.position.x == map.width - 1 {
+            return None;
+        }
+
         let new_position = match self.direction {
             Direction::Up => MapPosition {
                 x: self.position.x,
@@ -103,24 +121,30 @@ impl Guard {
 }
 
 fn main() {
-    let (map, mut guard) = read_map_data().expect("Failed to read map");
+    let (map, guard) = read_map_data().expect("Failed to read map");
     // println!("{:?}", map);
     println!("{:?}", guard);
 
-    println!("==================== Part 1 ====================");
-    let mut visited_positions = HashSet::new();
-    loop {
-        if let Some(new_position) = guard.make_move(&map) {
-            println!("Guard moved to {:?}", new_position);
-            visited_positions.insert(new_position);
+    let map_2 = map.clone();
+    let guard_2 = guard.clone();
 
-            // print_map(&map, &guard);
-        } else {
-            break;
-        }
+    println!("==================== Part 1 ====================");
+
+    let mut tracker = GuardTracker::new(&map, &guard);
+    if let Some(visited_positions) = tracker.track() {
+        println!(
+            "Guard visited {} unique position(s)",
+            visited_positions.len() + 1
+        );
+        // print_map(&map, &guard, visited_positions);
+    } else {
+        println!("Guard made a loop");
     }
-    println!("Guard made {} steps", visited_positions.len() + 1);
-    print_map(&map, &guard, Some(visited_positions));
+
+    println!("==================== Part 2 ====================");
+    let mut tracker = GuardTracker::new(&map_2, &guard_2);
+    let loops_count = tracker.find_loops();
+    println!("Guard made {} loop(s)", loops_count);
 }
 
 fn read_map_data() -> Result<(Map, Guard), String> {
@@ -142,10 +166,11 @@ fn read_map_data() -> Result<(Map, Guard), String> {
         for (pos_x, map_element_raw) in map_line.chars().enumerate() {
             match MapElement::from_char(map_element_raw)? {
                 MapElement::Guard => {
-                    guard = Some(Guard {
-                        position: MapPosition { x: pos_x, y: pos_y },
-                        direction: Direction::Up,
-                    });
+                    guard = Some(Guard::new(
+                        MapPosition { x: pos_x, y: pos_y },
+                        Direction::Up,
+                        MapPosition { x: pos_x, y: pos_y },
+                    ));
                 }
                 MapElement::Empty => {}
                 MapElement::Obstacle => {
@@ -176,9 +201,7 @@ fn read_input(file_path: &str) -> io::Result<Vec<String>> {
     Ok(input_lines)
 }
 
-fn print_map(map: &Map, guard: &Guard, visited: Option<HashSet<MapPosition>>) {
-    let visited = visited.unwrap_or(HashSet::new());
-
+fn print_map(map: &Map, guard: &Guard, visited: HashMap<MapPosition, Direction>) {
     for y in 0..map.height {
         for x in 0..map.width {
             let pos = MapPosition { x, y };
@@ -186,12 +209,78 @@ fn print_map(map: &Map, guard: &Guard, visited: Option<HashSet<MapPosition>>) {
                 print!("#");
             } else if guard.position == pos {
                 print!("^");
-            } else if visited.contains(&pos) {
-                print!("1");
+            } else if let Some(direction) = visited.get(&pos) {
+                if direction == &Direction::Up || direction == &Direction::Down {
+                    print!("|");
+                } else {
+                    print!("-");
+                }
             } else {
                 print!(".");
             }
         }
         println!();
+    }
+}
+
+struct GuardTracker {
+    map: Map,
+    guard: Guard,
+}
+
+impl GuardTracker {
+    pub fn new(map: &Map, guard: &Guard) -> GuardTracker {
+        GuardTracker {
+            map: map.clone(),
+            guard: guard.clone(),
+        }
+    }
+
+    pub fn track(&mut self) -> Option<HashMap<MapPosition, Direction>> {
+        let mut visited = HashMap::new();
+        visited.insert(self.guard.position.clone(), self.guard.direction);
+
+        while let Some(new_position) = self.guard.make_move(&self.map) {
+            if let Some(past_direction) = visited.get(&new_position) {
+                if *past_direction == self.guard.direction {
+                    return None;
+                }
+            }
+            visited.insert(new_position.clone(), self.guard.direction);
+        }
+        Some(visited)
+    }
+
+    fn predict_next_guard_location(&self) -> Option<MapPosition> {
+        let mut guard = self.guard.clone();
+        guard.make_move(&self.map)
+    }
+
+    fn put_obstacle(&mut self, position: Option<MapPosition>) -> Option<Map> {
+        if let Some(obstacle_position) = position {
+            if obstacle_position == self.guard.start_position {
+                return None;
+            }
+            let mut updated_map = self.map.clone();
+            updated_map.obstacles.insert(obstacle_position);
+            return Some(updated_map);
+        }
+        None
+    }
+
+    pub fn find_loops(&mut self) -> u32 {
+        let mut added_obstacle_positions = HashSet::new();
+        loop {
+            let next_position = self.predict_next_guard_location();
+            if let Some(new_map) = self.put_obstacle(next_position.clone()) {
+                if GuardTracker::new(&new_map, &self.guard).track().is_none() {
+                    added_obstacle_positions.insert(next_position.unwrap());
+                }
+            }
+            if self.guard.make_move(&self.map).is_none() {
+                break;
+            }
+        }
+        added_obstacle_positions.len() as u32
     }
 }
