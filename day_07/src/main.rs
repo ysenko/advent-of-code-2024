@@ -93,7 +93,7 @@ enum Ops {
 
 impl Ops {
     fn variants() -> Vec<Ops> {
-        vec![Ops::Add, Ops::Mul, Ops::Concat]
+        vec![Ops::Add, Ops::Mul, Ops::Concat
     }
 }
 
