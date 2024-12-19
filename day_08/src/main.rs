@@ -1,9 +1,10 @@
-use itertools::Itertools;
+use itertools::{Itertools, chain};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::cmp::{max, min};
 
 const EMPTY: char = '.';
 
@@ -22,15 +23,18 @@ fn main() {
 
     let mut antennas_list: HashMap<Location, Antenna> = HashMap::new();
     let mut antinodes = HashSet::new();
+    let mut resonant_harmonic_antinodes: HashSet<Location> = HashSet::new();
     for group in antenna_groups.values() {
         for antennas in group.iter().combinations(2) {
             let pair = AntennaPair::new(&antennas[0], &antennas[1]).unwrap();
             let pair_antinodes = pair.get_antinodes();
             for antinode in remove_unreachable_locations(max_x, max_y, &pair_antinodes) {
-                antinodes.insert(antinode);
+                antinodes.insert(antinode.clone());
             }
             antennas_list.insert(antennas[0].loc, *antennas[0]);
             antennas_list.insert(antennas[1].loc, *antennas[1]);
+
+            resonant_harmonic_antinodes.extend(pair.get_resonant_harmonics_antinodes(max_x, max_y));
         }
     }
 
@@ -38,8 +42,8 @@ fn main() {
     println!("===================== Part 1 =====================");
     println!("Found {} antinodes", antinodes.len());
 
-    // print_map(lines.len(), lines[0].len(), &antinodes, &antennas_list);
     println!("===================== Part 2 =====================");
+    println!("Found {} antinodes", resonant_harmonic_antinodes.into_iter().count());
 }
 
 fn read_input(file_path: &str) -> io::Result<Vec<String>> {
@@ -91,7 +95,7 @@ impl Distance {
 #[derive(Debug, Clone, Copy)]
 struct Antenna {
     loc: Location,
-    type_name: char,
+    frequency: char,
 }
 
 struct AntennaPair<'a> {
@@ -101,11 +105,21 @@ struct AntennaPair<'a> {
 
 impl AntennaPair<'_> {
     pub fn new<'a>(a: &'a Antenna, b: &'a Antenna) -> Result<AntennaPair<'a>, String> {
-        if a.type_name != b.type_name {
-            Err("Antennas must be of the same type".to_string())
+        if a.frequency != b.frequency {
+            Err("Antennas must be of the frequency".to_string())
         } else {
             Ok(AntennaPair { a, b })
         }
+    }
+
+    fn calculate_slope(&self) -> f64 {
+        let x_diff = self.b.loc.x as f64 - self.a.loc.x as f64;
+        let y_diff = self.b.loc.y as f64 - self.a.loc.y as f64;
+        y_diff / x_diff
+    }
+    fn calculate_b(&self) -> f64 {
+        let slope = self.calculate_slope();
+        (self.a.loc.y as f64) - (slope * self.a.loc.x as f64)
     }
 
     pub fn get_antinodes(&self) -> Vec<Location> {
@@ -134,6 +148,21 @@ impl AntennaPair<'_> {
         .filter(|&loc| loc != self.a.loc && loc != self.b.loc)
         .collect()
     }
+
+    pub fn get_resonant_harmonics_antinodes(&self, max_x: usize, max_y: usize) -> Vec<Location> {
+        let mut antinodes = vec![];
+        let slope = self.calculate_slope();
+        let b = self.calculate_b();
+
+        for x in 0..max_x {
+            let y = slope * x as f64 + b;
+            let loc_y = y as usize;
+            if (y - loc_y as f64) == 0.0 && (loc_y < max_y) {
+                antinodes.push(Location::new(x as i32, loc_y as i32).unwrap());
+            }
+        }
+        antinodes
+    }
 }
 
 fn find_antenna_groups(map: &Vec<String>) -> HashMap<char, Vec<Antenna>> {
@@ -143,7 +172,7 @@ fn find_antenna_groups(map: &Vec<String>) -> HashMap<char, Vec<Antenna>> {
             if c != EMPTY {
                 let antenna = Antenna {
                     loc: Location { x, y },
-                    type_name: c,
+                    frequency: c,
                 };
                 match groups.get_mut(&c) {
                     Some(antennas) => {
@@ -181,10 +210,10 @@ fn print_map(
         for x in 0..width {
             let loc = Location { x, y };
 
-            if let Some(a) = antennas.get(&loc) {
-                print!("{}", a.type_name);
-            } else if antinodes.contains(&loc) {
+            if antinodes.contains(&loc) {
                 print!("#");
+            } else if let Some(a) = antennas.get(&loc) {
+                print!("{}", a.frequency);
             } else {
                 print!(".");
             }
@@ -198,14 +227,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_calculate_slope() {
+        let a = Location::new(7, 7).unwrap();
+        let b = Location::new(8, 8 ).unwrap();
+        let antenna_a = Antenna{loc: a, frequency: 'a'};
+        let antenna_b = Antenna{loc: b, frequency: 'a'};
+        let pair = AntennaPair::new(&antenna_a, &antenna_b).unwrap();
+
+        assert_eq!(pair.calculate_slope(), 1.0);
+    }
+
+    #[test]
+    fn test_calculate_b() {
+        let a = Location::new(7, 7).unwrap();
+        let b = Location::new(8, 8 ).unwrap();
+        let antenna_a = Antenna{loc: a, frequency: 'a'};
+        let antenna_b = Antenna{loc: b, frequency: 'a'};
+        let pair = AntennaPair::new(&antenna_a, &antenna_b).unwrap();
+
+        assert_eq!(pair.calculate_b(), 0.0);
+    }
+
+    #[test]
     fn test_find_antinodes() {
         let map = vec![
             "............".to_string(),
-            "........0...".to_string(),
-            ".....0......".to_string(),
-            ".......0....".to_string(),
-            "....0.......".to_string(),
-            "......A.....".to_string(),
+            "............".to_string(),
+            "............".to_string(),
+            "............".to_string(),
+            "............".to_string(),
+            "............".to_string(),
             "............".to_string(),
             "............".to_string(),
             "........A...".to_string(),
@@ -217,24 +268,16 @@ mod tests {
         let max_y = map.len();
         let max_x = map[0].len();
 
-        let mut pairs: Vec<AntennaPair> = vec![];
-        let mut antennas_list: HashMap<Location, Antenna> = HashMap::new();
         let mut antinodes = HashSet::new();
         for group in antenna_groups.values() {
             for antennas in group.iter().combinations(2) {
                 let pair = AntennaPair::new(&antennas[0], &antennas[1]).unwrap();
-                let pair_antinodes = pair.get_antinodes();
-                for antinode in remove_unreachable_locations(max_x, max_y, &pair_antinodes) {
-                    antinodes.insert(antinode);
-                }
-                pairs.push(pair);
-                antennas_list.insert(antennas[0].loc, *antennas[0]);
-                antennas_list.insert(antennas[1].loc, *antennas[1]);
+                let pair_antinodes = pair.get_resonant_harmonics_antinodes(max_x, max_y);
+                antinodes.extend(pair_antinodes);
             }
         }
 
-        print_map(map.len(), map[0].len(), &antinodes, &antennas_list);
-
-        assert_eq!(antinodes.len(), 14);
+        println!("{:?}", antinodes);
+        assert_eq!(antinodes.len(), 12);
     }
 }
